@@ -1,0 +1,36 @@
+     1                                  BOOT_LOAD equ 0x7C00        ;启动程序的加载位置
+     2                                  
+     3                                  ORG BOOT_LOAD               ;向编译器指示加载地址
+     4                                  
+     5                                  entry:
+     6 00000000 EB58                    	jmp ipl
+     7                                  	;------------------
+     8                                  	;BPB(BIOS Parameter Block)
+     9                                  	;------------------
+    10 00000002 90<rept>                	times 90 -($-$$) db 0x90
+    11                                  
+    12                                  	;----------------------------
+    13                                  	;IPL(Initial Pragram Loader)
+    14                                  ipl:
+    15 0000005A FA                      	cli ;//禁止中断
+    16                                  
+    17 0000005B B80000                  	mov ax,0x0000
+    18 0000005E 8ED8                    	mov ds , ax        ;//将段寄存器都先设置为0
+    19 00000060 8EC0                    	mov es , ax
+    20 00000062 8ED0                    	mov ss , ax
+    21 00000064 BC007C                  	mov sp , BOOT_LOAD   ;//将栈底设置为boot程序开始的地方
+    22                                  
+    23 00000067 FB                      	sti ;//允许中断
+    24                                  
+    25 00000068 8816[6C00]              	mov [BOOT.DRIVE], dl;//dl是保存启动程序的外部设备的序号
+    26                                  
+    27                                  	;------------------
+    28                                  	;结束处理
+    29                                  	;------------------
+    30                                  
+    31                                  ALIGN 2, db 0
+    32                                  BOOT:
+    33 0000006C 0000                    .DRIVE: dw 0   ;//drive的序号
+    34                                  
+    35 0000006E 00<rept>                	times 510 -($-$$) db 0x00
+    36 000001FE 55AA                    	db 0x55,0xAA
