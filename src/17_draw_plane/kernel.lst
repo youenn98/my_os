@@ -1,0 +1,126 @@
+     1                                  %include "../include/define.s"
+     1                              <1> BOOT_LOAD equ 0x7C00      ;//boot程序加载地址
+     2                              <1> BOOT_SIZE equ (1024 * 8)  ;//boot代码段大小
+     3                              <1> BOOT_END  equ (BOOT_LOAD + BOOT_SIZE) ;
+     4                              <1> 
+     5                              <1> SECT_SIZE equ (512)       ;//sector大小
+     6                              <1> BOOT_SECT equ (BOOT_SIZE / SECT_SIZE)   ;//boot的sector数
+     7                              <1> 
+     8                              <1> E820_RECORD_SIZE equ 20
+     9                              <1> 
+    10                              <1> KERNEL_LOAD equ 0x0010_1000
+    11                              <1> KERNEL_SIZE equ (1024*8) ;//kernel的大小仍然是8k
+    12                              <1> KERNEL_SECT equ (KERNEL_SIZE / SECT_SIZE)
+     2                                  %include "../include/macro.s"
+     1                              <1> %macro cdecl 1-*.nolist  ;//1-*是一个以上的参数
+     2                              <1> 
+     3                              <1> 	%rep %0 - 1         ;//%0是参数的个数
+     4                              <1> 		push %{-1:-1}  ;//%将参数倒着压栈
+     5                              <1> 		%rotate -1   
+     6                              <1> 	%endrep
+     7                              <1> 	%rotate -1      ;//恢复原来的参数
+     8                              <1> 
+     9                              <1> 	call %1
+    10                              <1> 	%if 1 < %0
+    11                              <1> 		add sp,(__BITS__ >> 3)*(%0 - 1)     ;//__BITS__是表示16比特模式还是32比特模式
+    12                              <1> 	%endif									;//给每个参数分配栈空间
+    13                              <1> %endmacro
+    14                              <1> 
+    15                              <1> struc drive
+    16 00000000 <res 00000002>      <1> 	.no resw 1	 ;驱动号
+    17 00000002 <res 00000002>      <1> 	.cyln resw 1 ;cylinder
+    18 00000004 <res 00000002>      <1> 	.head resw 1 ;head
+    19 00000006 <res 00000002>      <1> 	.sect resw 1 ;sector
+    20                              <1> endstruc
+    21                              <1> 
+     3                                  	
+     4                                  	ORG KERNEL_LOAD
+     5                                  
+     6                                  [BITS 32]
+     7                                  ;*******************
+     8                                  ;entry  point
+     9                                  ;*******************
+    10                                  kernel:
+    11                                  	;----------------------
+    12                                  	;获取font address
+    13                                  	;----------------------
+    14 00000000 BE007E0000              	mov esi,BOOT_LOAD + SECT_SIZE ;ESI = 0x7C00 + 512
+    15 00000005 0FB706                  	movzx eax,word[esi + 0]				;//eax = segment
+    16 00000008 0FB75E02                	movzx ebx,word[esi + 2]				;//ebx = offset
+    17 0000000C C1E004                  	shl eax,4
+    18 0000000F 01D8                    	add eax,ebx
+    19 00000011 A3[CC000000]            	mov [FONT_ADR],eax					;FONT_ADR[0] = eax
+    20                                  
+    21                                  	;------------------------------
+    22                                  	;8bit的横线
+    23                                  	;------------------------------
+    24 00000016 B407                    	mov ah,0x07			;//读入plane(Bit:----IRGB)
+    25 00000018 B002                    	mov al,0x02			;//AL = mapmask寄存器
+    26                                  
+    27 0000001A 66BAC403                	mov dx,0x03c4		;//dx = sequence控制端口
+    28 0000001E 66EF                    	out dx,ax			;//端口输出
+    29                                  
+    30 00000020 C60501000A00FF          	mov [0x000A_0000 + 1],byte 0xFF	;//8个点的横线
+    31                                  
+    32 00000027 B402                    	mov ah,0x02						;//(Bit:----IRGB)
+    33 00000029 66EF                    	out dx,ax
+    34                                  
+    35 0000002B C60502000A00FF          	mov [0x000A_0000 + 2],byte 0xFF	;//8个点的横线
+    36                                  
+    37 00000032 B401                    	mov ah,0x01						;//(Bit:----IRGB)
+    38 00000034 66EF                    	out dx,ax
+    39                                  	
+    40 00000036 C60503000A00FF          	mov [0x000A_0000 + 3],byte 0xFF	;//8个点的横线
+    41                                  
+    42                                  	;-----------------------------------
+    43                                  	;横跨画面的横线
+    44                                  	;-----------------------------------
+    45 0000003D B402                    	mov      ah,0x02
+    46 0000003F 66EF                    	out		 dx,ax
+    47                                  
+    48 00000041 8D3D50000A00            	lea		edi,[0x000A_0000 + 80]	;EDI = VRAM地址
+    49 00000047 B950000000              	mov		ecx,80				;//ECX = 反复的回数
+    50 0000004C B0FF                    	mov		al,0xFF				;//al = bit_pattern
+    51 0000004E F3AA                    	rep		stosb				;//*edi++ = al
+    52                                  
+    53                                  	;-----------------------
+    54                                  	;第2行,8 dot的矩形
+    55                                  	;-----------------------
+    56 00000050 BF01000000              	mov   edi,1					;//edi = 行数
+    57                                  
+    58 00000055 C1E708                  	shl   edi,8					;//edi *= 256
+    59 00000058 8DBCBF00000A00          	lea	  edi,[edi * 4 + edi +0xA_0000];//EDI = VRAM地址
+    60                                  
+    61 0000005F 66C707FF00              	mov		[edi + (80*0)],word 0xFF
+    62 00000064 66C74750FF00            	mov		[edi + (80*1)],word 0xFF
+    63 0000006A 66C787A0000000FF00      	mov		[edi + (80*2)],word 0xFF
+    64 00000073 66C787F0000000FF00      	mov		[edi + (80*3)],word 0xFF
+    65 0000007C 66C78740010000FF00      	mov		[edi + (80*4)],word 0xFF
+    66 00000085 66C78790010000FF00      	mov		[edi + (80*5)],word 0xFF
+    67 0000008E 66C787E0010000FF00      	mov		[edi + (80*6)],word 0xFF
+    68 00000097 66C78730020000FF00      	mov		[edi + (80*7)],word 0xFF
+    69                                  	
+    70                                  	;------------------------------
+    71                                  	;第3行文字
+    72                                  	;------------------------------
+    73 000000A0 BE41000000              	mov esi,'A'
+    74 000000A5 C1E604                  	shl esi,4
+    75 000000A8 0335[CC000000]          	add esi,[FONT_ADR]		;//esi = FONT_ADR['A']
+    76                                  
+    77 000000AE BF02000000              	mov edi,2				;// edi - 行数
+    78 000000B3 C1E708                  	shl edi,8				;//EDI*=256
+    79 000000B6 8DBCBF00000A00          	lea	  edi,[edi * 4 + edi +0xA_0000];//EDI = VRAM地址
+    80 000000BD B910000000              	mov ecx,16
+    81                                  .10L:
+    82 000000C2 A4                      	movsb			;//*edi++ =*esi++
+    83 000000C3 83C74F                  	add edi,80-1	;//edi += 79
+    84 000000C6 E2FA                    	loop .10L
+    85                                  
+    86 000000C8 EBFE                    	jmp $
+    87                                  
+    88 000000CA 00<rept>                ALIGN 4,db 0
+    89 000000CC 00000000                FONT_ADR: dd 0
+    90                                  ;********************
+    91                                  ;padding
+    92                                  ;********************
+    93 000000D0 00<rept>                	times KERNEL_SIZE -($-$$) db 0;
